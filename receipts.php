@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Create new receipt
     if ($action === 'create') {
-      $ref         = genRef('REC');
+      $ref         = nextReceiptRef();
       $supplierId  = (int)($_POST['supplier_id'] ?? 0) ?: null;
       $supplierTxt = trim($_POST['supplier'] ?? '');
       $purpose     = trim($_POST['purpose'] ?? '');
@@ -109,27 +109,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Update header
     if ($action === 'update_header') {
-        $id         = (int)($_POST['id'] ?? 0);
-        $supplierId = (int)($_POST['supplier_id'] ?? 0) ?: null;
-        $supplier   = trim($_POST['supplier'] ?? '');
+      $id         = (int)($_POST['id'] ?? 0);
+      $supplierId = (int)($_POST['supplier_id'] ?? 0) ?: null;
+      $supplier   = trim($_POST['supplier'] ?? '');
       $purpose    = trim($_POST['purpose'] ?? '');
+      $schedule   = trim($_POST['schedule_date'] ?? '');
+      $fromLoc    = trim($_POST['receive_from_location'] ?? '');
+      $resp       = trim($_POST['responsible'] ?? '');
 
-        if ($id) {
-            if ($supplierId) {
-                $st = $db->prepare("SELECT name FROM suppliers WHERE id=?");
-                $st->execute([$supplierId]);
-                $nameFromMaster = (string)($st->fetchColumn() ?: '');
-                if ($nameFromMaster !== '') {
-                    $supplier = $nameFromMaster;
-                }
-            }
-
-            $db->prepare("UPDATE receipts
-                      SET supplier_id=?,supplier=?,purpose=?,updated_at=CURRENT_TIMESTAMP
-                      WHERE id=? AND status NOT IN ('Done','Canceled')")
-              ->execute([$supplierId, $supplier, $purpose, $id]);
+      if ($id) {
+        if ($supplierId) {
+          $st = $db->prepare("SELECT name FROM suppliers WHERE id=?");
+          $st->execute([$supplierId]);
+          $nameFromMaster = (string)($st->fetchColumn() ?: '');
+          if ($nameFromMaster !== '') {
+            $supplier = $nameFromMaster;
+          }
         }
-        redirect("receipts.php?id=$id");
+
+        $db->prepare("UPDATE receipts
+              SET supplier_id=?,supplier=?,purpose=?,schedule_date=?,receive_from_location=?,responsible=?,updated_at=CURRENT_TIMESTAMP
+              WHERE id=? AND status NOT IN ('Done','Canceled')")
+          ->execute([$supplierId, $supplier, $purpose, $schedule, $fromLoc, $resp, $id]);
+      }
+      redirect("receipts.php?id=$id");
     }
 
     // Add item line
@@ -335,6 +338,20 @@ include 'includes/header.php';
         <label>Purpose / Reference</label>
         <input type="text" name="purpose" class="form-control" value="<?= e($receipt['purpose']) ?>" placeholder="What is this receipt for?">
       </div>
+      <div class="form-group">
+        <label>Schedule Date</label>
+        <input type="date" name="schedule_date" class="form-control" value="<?= e($receipt['schedule_date'] ?? '') ?>">
+      </div>
+    </div>
+    <div class="form-grid" style="margin-bottom:12px;">
+      <div class="form-group">
+        <label>Receive From Location</label>
+        <input type="text" name="receive_from_location" class="form-control" value="<?= e($receipt['receive_from_location'] ?? '') ?>" placeholder="Origin location / dock">
+      </div>
+      <div class="form-group">
+        <label>Responsible</label>
+        <input type="text" name="responsible" class="form-control" value="<?= e($receipt['responsible'] ?? '') ?>" placeholder="Who is responsible?">
+      </div>
     </div>
     <input type="hidden" name="supplier" value="<?= e($receipt['supplier']) ?>">
     <button type="submit" class="btn btn-secondary btn-sm"><i data-lucide="save"></i> Save Header</button>
@@ -349,6 +366,18 @@ include 'includes/header.php';
     <div class="detail-meta-item">
       <label>Purpose</label>
       <div class="value"><?= e($receipt['purpose'] ?: '—') ?></div>
+    </div>
+    <div class="detail-meta-item">
+      <label>Schedule Date</label>
+      <div class="value"><?= $receipt['schedule_date'] ? date('d M Y', strtotime($receipt['schedule_date'])) : '—' ?></div>
+    </div>
+    <div class="detail-meta-item">
+      <label>Receive From</label>
+      <div class="value"><?= e($receipt['receive_from_location'] ?? '—') ?></div>
+    </div>
+    <div class="detail-meta-item">
+      <label>Responsible</label>
+      <div class="value"><?= e($receipt['responsible'] ?? '—') ?></div>
     </div>
     <div class="detail-meta-item">
       <label>Supplier Contact</label>
@@ -382,6 +411,9 @@ include 'includes/header.php';
 
   <?php if ($editable): ?>
   <div class="detail-actions" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+    <button type="button" class="btn btn-secondary" onclick="window.print()">
+      <i data-lucide="printer"></i> Print
+    </button>
     <form method="POST" action="receipts.php">
       <input type="hidden" name="_csrf"  value="<?= e(csrfToken()) ?>">
       <input type="hidden" name="action" value="validate">
@@ -534,7 +566,7 @@ include 'includes/header.php';
 <?php endif; ?>
 
 <?php else: ?>
-<!-- ══ LIST VIEW ════════════════════════════════════════════════════════════ -->
+<!-- ══ LIST / KANBAN VIEW ═══════════════════════════════════════════════════ -->
 
 <div class="page-header">
   <div class="page-header-text">
@@ -553,49 +585,94 @@ include 'includes/header.php';
     <i data-lucide="search"></i>
     <input type="text" id="searchInput" class="form-control search-input" placeholder="Search receipts…">
   </div>
+  <div class="view-toggle">
+    <button type="button" class="btn btn-ghost btn-sm is-active" data-view-group="receipts" data-view="table">Table</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-view-group="receipts" data-view="kanban">Kanban</button>
+  </div>
 </div>
 
-<div class="card">
-  <div class="table-wrap">
-    <table id="receiptsTable">
-      <thead>
-        <tr>
-          <th>Reference</th>
-          <th>Supplier</th>
-          <th>Items</th>
-          <th>Status</th>
-          <th>Created</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        <?php if (empty($allReceipts)): ?>
-        <tr><td colspan="6">
-          <div class="empty-state">
-            <div class="empty-icon"><i data-lucide="inbox"></i></div>
-            <h3>No receipts yet</h3>
-            <p>Create a receipt when goods arrive from a supplier.</p>
-            <button class="btn btn-primary" onclick="openModal('modal-create')"><i data-lucide="plus"></i> New Receipt</button>
-          </div>
-        </td></tr>
-        <?php else: ?>
-          <?php foreach ($allReceipts as $r): ?>
+<div id="receipts-table-view">
+  <div class="card">
+    <div class="table-wrap">
+      <table id="receiptsTable">
+        <thead>
           <tr>
-            <td class="fw-600 font-mono"><?= e($r['reference']) ?></td>
-            <td><?= e($r['supplier_display'] ?: '—') ?></td>
-            <td><span class="badge badge-gray"><?= $r['item_count'] ?> lines</span></td>
-            <td><?= statusBadge($r['status']) ?></td>
-            <td class="text-secondary text-sm"><?= date('d M Y', strtotime($r['created_at'])) ?></td>
-            <td>
-              <a href="receipts.php?id=<?= $r['id'] ?>" class="btn btn-secondary btn-sm">
-                <i data-lucide="eye"></i> View
-              </a>
-            </td>
+            <th>Reference</th>
+            <th>Supplier</th>
+            <th>Items</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Actions</th>
           </tr>
-          <?php endforeach; ?>
+        </thead>
+        <tbody>
+          <?php if (empty($allReceipts)): ?>
+          <tr><td colspan="6">
+            <div class="empty-state">
+              <div class="empty-icon"><i data-lucide="inbox"></i></div>
+              <h3>No receipts yet</h3>
+              <p>Create a receipt when goods arrive from a supplier.</p>
+              <button class="btn btn-primary" onclick="openModal('modal-create')"><i data-lucide="plus"></i> New Receipt</button>
+            </div>
+          </td></tr>
+          <?php else: ?>
+            <?php foreach ($allReceipts as $r): ?>
+            <tr>
+              <td class="fw-600 font-mono"><?= e($r['reference']) ?></td>
+              <td><?= e($r['supplier_display'] ?: '—') ?></td>
+              <td><span class="badge badge-gray"><?= $r['item_count'] ?> lines</span></td>
+              <td><?= statusBadge($r['status']) ?></td>
+              <td class="text-secondary text-sm"><?= date('d M Y', strtotime($r['created_at'])) ?></td>
+              <td>
+                <a href="receipts.php?id=<?= $r['id'] ?>" class="btn btn-secondary btn-sm">
+                  <i data-lucide="eye"></i> View
+                </a>
+              </td>
+            </tr>
+            <?php endforeach; ?>
+          <?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="receipts-kanban-view" class="kanban-wrap" style="display:none;">
+  <div class="kanban-columns">
+    <?php
+    $receiptColumns = [
+      'Draft'    => 'Draft',
+      'Done'     => 'Done',
+      'Canceled' => 'Canceled',
+    ];
+    ?>
+    <?php foreach ($receiptColumns as $statusKey => $statusLabel): ?>
+    <div class="kanban-column">
+      <div class="kanban-column-header">
+        <span><?= e($statusLabel) ?></span>
+        <span class="text-xs text-muted"><?= count(array_filter($allReceipts, fn($r) => $r['status'] === $statusKey)) ?></span>
+      </div>
+      <div class="kanban-column-body">
+        <?php $hasCards = false; ?>
+        <?php foreach ($allReceipts as $r): ?>
+          <?php if ($r['status'] === $statusKey): $hasCards = true; ?>
+            <a href="receipts.php?id=<?= $r['id'] ?>" class="kanban-card">
+              <div class="kanban-card-title">
+                <span class="font-mono"><?= e($r['reference']) ?></span>
+              </div>
+              <div class="kanban-card-meta">
+                <span><?= e($r['supplier_display'] ?: '—') ?></span>
+                <span><?= $r['item_count'] ?> lines · <?= date('d M', strtotime($r['created_at'])) ?></span>
+              </div>
+            </a>
+          <?php endif; ?>
+        <?php endforeach; ?>
+        <?php if (!$hasCards): ?>
+          <div class="kanban-empty">No receipts</div>
         <?php endif; ?>
-      </tbody>
-    </table>
+      </div>
+    </div>
+    <?php endforeach; ?>
   </div>
 </div>
 
@@ -665,7 +742,42 @@ include 'includes/header.php';
   </div>
 </div>
 
-<script>bindSearch('searchInput', 'receiptsTable');</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    if (typeof bindSearch === 'function') {
+      bindSearch('searchInput', 'receiptsTable');
+    }
+
+    var buttons = document.querySelectorAll('[data-view-group="receipts"]');
+
+    function forEachButton(cb) {
+      Array.prototype.forEach.call(buttons, cb);
+    }
+
+    function setView(view) {
+      var table = document.getElementById('receipts-table-view');
+      var kanban = document.getElementById('receipts-kanban-view');
+      if (!table || !kanban) return;
+      table.style.display = view === 'kanban' ? 'none' : '';
+      kanban.style.display = view === 'kanban' ? '' : 'none';
+      forEachButton(function (btn) {
+        if (btn.getAttribute('data-view') === view) {
+          btn.classList.add('is-active');
+        } else {
+          btn.classList.remove('is-active');
+        }
+      });
+    }
+
+    forEachButton(function (btn) {
+      btn.addEventListener('click', function () {
+        setView(this.getAttribute('data-view'));
+      });
+    });
+
+    setView('table');
+  });
+</script>
 
 <?php endif; ?>
 

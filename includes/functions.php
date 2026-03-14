@@ -40,10 +40,38 @@ function jsonOut(mixed $data, int $code = 200): never
     exit;
 }
 
-/** Generate a unique document reference */
+/** Generate a unique document reference (legacy fallback) */
 function genRef(string $prefix): string
 {
     return $prefix . '/' . date('Ymd') . '/' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 6));
+}
+
+/** Sequential reference for receipts: WH/IN/0001, WH/IN/0002, ... */
+function nextReceiptRef(): string
+{
+    try {
+        $current = (int)((getSetting('seq_receipt', '0')) ?? '0');
+        $current++;
+        setSetting('seq_receipt', (string)$current);
+        return sprintf('WH/IN/%04d', $current);
+    } catch (Throwable $e) {
+        // Fallback to legacy generator if settings are unavailable
+        return genRef('REC');
+    }
+}
+
+/** Sequential reference for deliveries: WH/OUT/0001, WH/OUT/0002, ... */
+function nextDeliveryRef(): string
+{
+    try {
+        $current = (int)((getSetting('seq_delivery', '0')) ?? '0');
+        $current++;
+        setSetting('seq_delivery', (string)$current);
+        return sprintf('WH/OUT/%04d', $current);
+    } catch (Throwable $e) {
+        // Fallback to legacy generator if settings are unavailable
+        return genRef('DEL');
+    }
 }
 
 /** CSRF token */

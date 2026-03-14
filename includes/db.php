@@ -114,6 +114,9 @@ function _initSchema(PDO $db): void
             purpose    TEXT DEFAULT '',
             status     TEXT DEFAULT 'Draft',
             notes      TEXT DEFAULT '',
+            schedule_date TEXT,
+            receive_from_location TEXT DEFAULT '',
+            responsible TEXT DEFAULT '',
             created_by INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -141,6 +144,10 @@ function _initSchema(PDO $db): void
             order_reference TEXT DEFAULT '',
             status     TEXT DEFAULT 'Draft',
             notes      TEXT DEFAULT '',
+            delivery_address TEXT DEFAULT '',
+            schedule_date TEXT,
+            responsible TEXT DEFAULT '',
+            operation_type TEXT DEFAULT '',
             created_by INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -251,8 +258,15 @@ function _initSchema(PDO $db): void
     // Schema migration support for existing SQLite files.
     _ensureColumn($db, 'receipts', 'supplier_id', 'INTEGER');
     _ensureColumn($db, 'receipts', 'purpose', "TEXT DEFAULT ''");
+    _ensureColumn($db, 'receipts', 'schedule_date', 'TEXT');
+    _ensureColumn($db, 'receipts', 'receive_from_location', "TEXT DEFAULT ''");
+    _ensureColumn($db, 'receipts', 'responsible', "TEXT DEFAULT ''");
     _ensureColumn($db, 'deliveries', 'customer_id', 'INTEGER');
     _ensureColumn($db, 'deliveries', 'order_reference', "TEXT DEFAULT ''");
+    _ensureColumn($db, 'deliveries', 'delivery_address', "TEXT DEFAULT ''");
+    _ensureColumn($db, 'deliveries', 'schedule_date', 'TEXT');
+    _ensureColumn($db, 'deliveries', 'responsible', "TEXT DEFAULT ''");
+    _ensureColumn($db, 'deliveries', 'operation_type', "TEXT DEFAULT ''");
     _ensureColumn($db, 'product_categories', 'active', 'INTEGER DEFAULT 1');
     _ensureColumn($db, 'users', 'login_id', 'TEXT');
     _ensureColumn($db, 'transfers', 'responsible', "TEXT DEFAULT ''");

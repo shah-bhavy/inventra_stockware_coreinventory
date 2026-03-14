@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Create new delivery order
     if ($action === 'create') {
-      $ref         = genRef('DEL');
+      $ref         = nextDeliveryRef();
       $customerId  = (int)($_POST['customer_id'] ?? 0) ?: null;
       $customerTxt = trim($_POST['customer'] ?? '');
       $orderRef    = trim($_POST['order_reference'] ?? '');
@@ -111,27 +111,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Update header
     if ($action === 'update_header') {
-        $id         = (int)($_POST['id'] ?? 0);
-        $customerId = (int)($_POST['customer_id'] ?? 0) ?: null;
-        $customer   = trim($_POST['customer'] ?? '');
+      $id         = (int)($_POST['id'] ?? 0);
+      $customerId = (int)($_POST['customer_id'] ?? 0) ?: null;
+      $customer   = trim($_POST['customer'] ?? '');
       $orderRef   = trim($_POST['order_reference'] ?? '');
+      $address    = trim($_POST['delivery_address'] ?? '');
+      $schedule   = trim($_POST['schedule_date'] ?? '');
+      $resp       = trim($_POST['responsible'] ?? '');
+      $opType     = trim($_POST['operation_type'] ?? '');
 
-        if ($id) {
-            if ($customerId) {
-                $st = $db->prepare('SELECT name FROM customers WHERE id=?');
-                $st->execute([$customerId]);
-                $nameFromMaster = (string)($st->fetchColumn() ?: '');
-                if ($nameFromMaster !== '') {
-                    $customer = $nameFromMaster;
-                }
-            }
-
-            $db->prepare('UPDATE deliveries
-                      SET customer_id=?,customer=?,order_reference=?,updated_at=CURRENT_TIMESTAMP
-                      WHERE id=? AND status NOT IN ("Done","Canceled")')
-              ->execute([$customerId, $customer, $orderRef, $id]);
+      if ($id) {
+        if ($customerId) {
+          $st = $db->prepare('SELECT name FROM customers WHERE id=?');
+          $st->execute([$customerId]);
+          $nameFromMaster = (string)($st->fetchColumn() ?: '');
+          if ($nameFromMaster !== '') {
+            $customer = $nameFromMaster;
+          }
         }
-        redirect("deliveries.php?id=$id");
+
+        $db->prepare('UPDATE deliveries
+              SET customer_id=?,customer=?,order_reference=?,delivery_address=?,schedule_date=?,responsible=?,operation_type=?,updated_at=CURRENT_TIMESTAMP
+              WHERE id=? AND status NOT IN ("Done","Canceled")')
+          ->execute([$customerId, $customer, $orderRef, $address, $schedule, $resp, $opType, $id]);
+      }
+      redirect("deliveries.php?id=$id");
     }
 
     // Add item line
@@ -363,6 +367,26 @@ include 'includes/header.php';
         <input type="text" name="order_reference" class="form-control" value="<?= e($delivery['order_reference']) ?>" placeholder="Sales order / reference">
       </div>
     </div>
+    <div class="form-grid" style="margin-bottom:12px;">
+      <div class="form-group">
+        <label>Delivery Address</label>
+        <textarea name="delivery_address" class="form-control" rows="2" placeholder="Delivery address"><?= e($delivery['delivery_address'] ?? '') ?></textarea>
+      </div>
+      <div class="form-group">
+        <label>Schedule Date</label>
+        <input type="date" name="schedule_date" class="form-control" value="<?= e($delivery['schedule_date'] ?? '') ?>">
+      </div>
+    </div>
+    <div class="form-grid" style="margin-bottom:12px;">
+      <div class="form-group">
+        <label>Responsible</label>
+        <input type="text" name="responsible" class="form-control" value="<?= e($delivery['responsible'] ?? '') ?>" placeholder="Who is responsible?">
+      </div>
+      <div class="form-group">
+        <label>Operation Type</label>
+        <input type="text" name="operation_type" class="form-control" value="<?= e($delivery['operation_type'] ?? '') ?>" placeholder="e.g. Shipment, Return">
+      </div>
+    </div>
     <input type="hidden" name="customer" value="<?= e($delivery['customer']) ?>">
     <button type="submit" class="btn btn-secondary btn-sm"><i data-lucide="save"></i> Save Header</button>
   </form>
@@ -371,6 +395,10 @@ include 'includes/header.php';
   <div class="detail-meta">
     <div class="detail-meta-item"><label>Customer</label><div class="value"><?= e($delivery['customer'] ?: '—') ?></div></div>
     <div class="detail-meta-item"><label>Order Ref</label><div class="value"><?= e($delivery['order_reference'] ?: '—') ?></div></div>
+    <div class="detail-meta-item"><label>Delivery Address</label><div class="value"><?= e($delivery['delivery_address'] ?? '—') ?></div></div>
+    <div class="detail-meta-item"><label>Schedule Date</label><div class="value"><?= $delivery['schedule_date'] ? date('d M Y', strtotime($delivery['schedule_date'])) : '—' ?></div></div>
+    <div class="detail-meta-item"><label>Responsible</label><div class="value"><?= e($delivery['responsible'] ?? '—') ?></div></div>
+    <div class="detail-meta-item"><label>Operation Type</label><div class="value"><?= e($delivery['operation_type'] ?? '—') ?></div></div>
     <div class="detail-meta-item">
       <label>Customer Contact</label>
       <div class="value">
@@ -394,6 +422,9 @@ include 'includes/header.php';
 
   <?php if ($editable): ?>
   <div class="detail-actions" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+    <button type="button" class="btn btn-secondary" onclick="window.print()">
+      <i data-lucide="printer"></i> Print
+    </button>
     <form method="POST" action="deliveries.php">
       <input type="hidden" name="_csrf"  value="<?= e(csrfToken()) ?>">
       <input type="hidden" name="action" value="mark_picked">
@@ -564,7 +595,7 @@ include 'includes/header.php';
 <?php endif; ?>
 
 <?php else: ?>
-<!-- LIST VIEW -->
+<!-- LIST / KANBAN VIEW -->
 <div class="page-header">
   <div class="page-header-text">
     <h1>Deliveries</h1>
@@ -580,38 +611,85 @@ include 'includes/header.php';
     <i data-lucide="search"></i>
     <input type="text" id="searchInput" class="form-control search-input" placeholder="Search deliveries…">
   </div>
+  <div class="view-toggle">
+    <button type="button" class="btn btn-ghost btn-sm is-active" data-view-group="deliveries" data-view="table">Table</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-view-group="deliveries" data-view="kanban">Kanban</button>
+  </div>
 </div>
 
-<div class="card">
-  <div class="table-wrap">
-    <table id="deliveriesTable">
-      <thead>
-        <tr><th>Reference</th><th>Customer</th><th>Items</th><th>Status</th><th>Created</th><th>Actions</th></tr>
-      </thead>
-      <tbody>
-        <?php if (empty($allDeliveries)): ?>
-        <tr><td colspan="6">
-          <div class="empty-state">
-            <div class="empty-icon"><i data-lucide="truck"></i></div>
-            <h3>No deliveries yet</h3>
-            <p>Create a delivery order when stock leaves the warehouse.</p>
-            <button class="btn btn-primary" onclick="openModal('modal-create')"><i data-lucide="plus"></i> New Delivery</button>
-          </div>
-        </td></tr>
-        <?php else: ?>
-          <?php foreach ($allDeliveries as $d): ?>
-          <tr>
-            <td class="fw-600 font-mono"><?= e($d['reference']) ?></td>
-            <td><?= e($d['customer_display'] ?: '—') ?></td>
-            <td><span class="badge badge-gray"><?= $d['item_count'] ?> lines</span></td>
-            <td><?= statusBadge($d['status']) ?></td>
-            <td class="text-secondary text-sm"><?= date('d M Y', strtotime($d['created_at'])) ?></td>
-            <td><a href="deliveries.php?id=<?= $d['id'] ?>" class="btn btn-secondary btn-sm"><i data-lucide="eye"></i> View</a></td>
-          </tr>
-          <?php endforeach; ?>
+<div id="deliveries-table-view">
+  <div class="card">
+    <div class="table-wrap">
+      <table id="deliveriesTable">
+        <thead>
+          <tr><th>Reference</th><th>Customer</th><th>Items</th><th>Status</th><th>Created</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          <?php if (empty($allDeliveries)): ?>
+          <tr><td colspan="6">
+            <div class="empty-state">
+              <div class="empty-icon"><i data-lucide="truck"></i></div>
+              <h3>No deliveries yet</h3>
+              <p>Create a delivery order when stock leaves the warehouse.</p>
+              <button class="btn btn-primary" onclick="openModal('modal-create')"><i data-lucide="plus"></i> New Delivery</button>
+            </div>
+          </td></tr>
+          <?php else: ?>
+            <?php foreach ($allDeliveries as $d): ?>
+            <tr>
+              <td class="fw-600 font-mono"><?= e($d['reference']) ?></td>
+              <td><?= e($d['customer_display'] ?: '—') ?></td>
+              <td><span class="badge badge-gray"><?= $d['item_count'] ?> lines</span></td>
+              <td><?= statusBadge($d['status']) ?></td>
+              <td class="text-secondary text-sm"><?= date('d M Y', strtotime($d['created_at'])) ?></td>
+              <td><a href="deliveries.php?id=<?= $d['id'] ?>" class="btn btn-secondary btn-sm"><i data-lucide="eye"></i> View</a></td>
+            </tr>
+            <?php endforeach; ?>
+          <?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="deliveries-kanban-view" class="kanban-wrap" style="display:none;">
+  <div class="kanban-columns">
+    <?php
+    $deliveryColumns = [
+      'Draft'    => 'Draft',
+      'Picked'   => 'Picked',
+      'Packed'   => 'Packed',
+      'Done'     => 'Done',
+      'Canceled' => 'Canceled',
+    ];
+    ?>
+    <?php foreach ($deliveryColumns as $statusKey => $statusLabel): ?>
+    <div class="kanban-column">
+      <div class="kanban-column-header">
+        <span><?= e($statusLabel) ?></span>
+        <span class="text-xs text-muted"><?= count(array_filter($allDeliveries, fn($d) => $d['status'] === $statusKey)) ?></span>
+      </div>
+      <div class="kanban-column-body">
+        <?php $hasCards = false; ?>
+        <?php foreach ($allDeliveries as $d): ?>
+          <?php if ($d['status'] === $statusKey): $hasCards = true; ?>
+            <a href="deliveries.php?id=<?= $d['id'] ?>" class="kanban-card">
+              <div class="kanban-card-title">
+                <span class="font-mono"><?= e($d['reference']) ?></span>
+              </div>
+              <div class="kanban-card-meta">
+                <span><?= e($d['customer_display'] ?: '—') ?></span>
+                <span><?= $d['item_count'] ?> lines · <?= date('d M', strtotime($d['created_at'])) ?></span>
+              </div>
+            </a>
+          <?php endif; ?>
+        <?php endforeach; ?>
+        <?php if (!$hasCards): ?>
+          <div class="kanban-empty">No deliveries</div>
         <?php endif; ?>
-      </tbody>
-    </table>
+      </div>
+    </div>
+    <?php endforeach; ?>
   </div>
 </div>
 
@@ -680,7 +758,42 @@ include 'includes/header.php';
   </div>
 </div>
 
-<script>bindSearch('searchInput', 'deliveriesTable');</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    if (typeof bindSearch === 'function') {
+      bindSearch('searchInput', 'deliveriesTable');
+    }
+
+    var buttons = document.querySelectorAll('[data-view-group="deliveries"]');
+
+    function forEachButton(cb) {
+      Array.prototype.forEach.call(buttons, cb);
+    }
+
+    function setView(view) {
+      var table = document.getElementById('deliveries-table-view');
+      var kanban = document.getElementById('deliveries-kanban-view');
+      if (!table || !kanban) return;
+      table.style.display = view === 'kanban' ? 'none' : '';
+      kanban.style.display = view === 'kanban' ? '' : 'none';
+      forEachButton(function (btn) {
+        if (btn.getAttribute('data-view') === view) {
+          btn.classList.add('is-active');
+        } else {
+          btn.classList.remove('is-active');
+        }
+      });
+    }
+
+    forEachButton(function (btn) {
+      btn.addEventListener('click', function () {
+        setView(this.getAttribute('data-view'));
+      });
+    });
+
+    setView('table');
+  });
+</script>
 <?php endif; ?>
 
 <!-- Customer Management Modals -->

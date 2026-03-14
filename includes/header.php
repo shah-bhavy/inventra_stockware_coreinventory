@@ -6,7 +6,7 @@
  *   $pageTitle  string  – displayed in <title> and topbar
  *   $activeNav  string  – key matching nav item (e.g. 'dashboard')
  */
-$pageTitle = $pageTitle ?? 'CoreInventory';
+$pageTitle = $pageTitle ?? 'Inventra';
 $activeNav = $activeNav ?? '';
 $userName  = $_SESSION['user_name']  ?? 'User';
 $userEmail = $_SESSION['user_email'] ?? '';
@@ -36,7 +36,7 @@ $nav = [
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><?= e($pageTitle) ?> – CoreInventory</title>
+<title><?= e($pageTitle) ?> – Inventra</title>
 <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
@@ -46,18 +46,12 @@ $nav = [
 <aside class="sidebar" id="sidebar">
 
   <a href="dashboard.php" class="sidebar-logo">
-    <div class="sidebar-logo-icon">
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
-           fill="none" stroke="currentColor" stroke-width="2.2"
-           stroke-linecap="round" stroke-linejoin="round">
-        <rect width="20" height="5" x="2" y="3" rx="1"/>
-        <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/>
-        <path d="M10 12h4"/>
-      </svg>
+    <div class="sidebar-logo-icon" style="background:none;padding:0;">
+      <img src="assets/images/logo.png" alt="Inventra logo" style="width:38px;height:38px;border-radius:var(--r-lg);object-fit:cover;">
     </div>
     <div>
-      <div class="sidebar-logo-name">CoreInventory</div>
-      <div class="sidebar-logo-sub">Stock Management</div>
+      <div class="sidebar-logo-name">Inventra</div>
+      <div class="sidebar-logo-sub">StockWare</div>
     </div>
   </a>
 
